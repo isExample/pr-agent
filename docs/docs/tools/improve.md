@@ -42,8 +42,6 @@ For example, you can choose to present all the suggestions as committable code c
 
 ![improve](https://codium.ai/images/pr_agent/improve.png){width=512}
 
-As can be seen, a single table comment has a significantly smaller PR footprint. We recommend this mode for most cases.
-Also note that collapsible are not supported in _Bitbucket_. Hence, the suggestions can only be presented in Bitbucket as code comments.
 
 #### Manual more suggestions
 To generate more suggestions (distinct from the ones already generated), for git-providers that don't support interactive checkbox option, you can manually run:
@@ -70,6 +68,32 @@ num_code_suggestions_per_chunk = ...
 
 - The `pr_commands` lists commands that will be executed automatically when a PR is opened.
 - The `[pr_code_suggestions]` section contains the configurations for the `improve` tool you want to edit (if any)
+
+### Table vs Committable code comments
+
+Qodo Merge supports two modes for presenting code suggestions: 
+
+1) [Table](https://codium.ai/images/pr_agent/code_suggestions_as_comment_closed.png) mode 
+
+2) [Inline Committable](https://codium.ai/images/pr_agent/improve.png) code comments mode.
+
+The table format offers several key advantages:
+
+- **Reduced noise**: Creates a cleaner PR experience with less clutter
+- **Quick overview and prioritization**: Enables quick review of one-liner summaries, impact levels, and easy prioritization
+- **High-level suggestions**: High-level suggestions that aren't tied to specific code chunks are presented only in the table mode
+- **Interactive features**: Provides 'more' and 'update' functionality via clickable buttons
+- **Centralized tracking**: Shows suggestion implementation status in one place
+- **IDE integration**: Allows applying suggestions directly in your IDE via [Qodo Command](https://github.com/qodo-ai/agents)
+
+Table mode is the default of Qodo Merge, and is recommended approach for most users due to these benefits. 
+
+![code_suggestions_as_comment_closed.png](https://codium.ai/images/pr_agent/code_suggestions_as_comment_closed.png){width=512}
+
+Teams with specific preferences can enable committable code comments mode in their local configuration, or use [dual publishing mode](#dual-publishing-mode).
+
+> `Note - due to platform limitations, Bitbucket cloud and server supports only committable code comments mode.`
+
 
 ### Assessing Impact
 
@@ -156,6 +180,7 @@ Qodo Merge supports both simple and hierarchical best practices configurations t
     - Keep each file relatively short, under 800 lines, since:
         - AI models may not process effectively very long documents
         - Long files tend to contain generic guidelines already known to AI
+        - Maximum multiple file accumulated content is limited to 2000 lines.
     - Use pattern-based structure rather than simple bullet points for better clarity
 
 ???- tip "Example of a best practices file"
@@ -226,34 +251,44 @@ For organizations managing multiple repositories with different requirements, Qo
 
    ```bash
    pr-agent-settings/
-   ├── metadata.yaml                     # Maps repos/folders to best practice paths
-   └── codebase_standards/               # Root for all best practice definitions
-       ├── global/                       # Global rules, inherited widely
+   ├── metadata.yaml                    # Maps repos/folders to best practice paths
+   └── codebase_standards/              # Root for all best practice definitions
+       ├── global/                      # Global rules, inherited widely
        │   └── best_practices.md
-       ├── groups/                       # For groups of repositories
+       ├── groups/                      # For groups of repositories
        │   ├── frontend_repos/
        │   │   └── best_practices.md
        │   ├── backend_repos/
        │   │   └── best_practices.md
-       │   └── ...
-       ├── qodo-merge/                   # For standalone repositories
-       │   └── best_practices.md
-       ├── qodo-monorepo/                # For monorepo-specific rules 
-       │   ├── best_practices.md         # Root level monorepo rules
-       │   ├── qodo-github/              # Subproject best practices
+       │   ├── python_repos/
        │   │   └── best_practices.md
-       │   └── qodo-gitlab/              # Another subproject
+       │   ├── cpp_repos/
+       │   │   └── best_practices.md
+       │   └── ...
+       ├── repo_a/                      # For standalone repositories
+       │   └── best_practices.md
+       ├── monorepo-name/               # For monorepo-specific rules 
+       │   ├── best_practices.md        # Root level monorepo rules
+       │   ├── service-a/               # Subproject best practices
+       │   │   └── best_practices.md
+       │   └── service-b/               # Another subproject
        │       └── best_practices.md
-       └── ...                           # More repositories
+       └── ...                          # More repositories
    ```
+
+> **Note:** In this structure, `pr-agent-settings`, `codebase_standards`, `global`, `groups`, `metadata.yaml`, and `best_practices.md` are hardcoded names that must be used exactly as shown. All other names (such as `frontend_repos`, `backend_repos`, `repo_a`, `monorepo-name`, `service-a`, etc.) are examples and should be replaced with your actual repository and service names.
+
+???+ tip "Grouping and categorizing best practices"
+    - Each folder (including the global folder) can contain a single `best_practices.md` file
+    - Organize repository best practices by creating subfolders within the `groups` folder. Group them by purpose, programming languages, or other categories
 
 3\. Define the metadata file `metadata.yaml` that maps your repositories to their relevant best practices paths, for example:
 
    ```yaml
    # Standalone repos
-   qodo-merge:
+   repo_a:
      best_practices_paths:
-       - "qodo-merge"
+       - "repo_a"
 
    # Group-associated repos
    repo_b:
@@ -267,16 +302,16 @@ For organizations managing multiple repositories with different requirements, Qo
        - "groups/backend_repos"
 
    # Monorepo with subprojects
-   qodo-monorepo:
+   monorepo-name:
      best_practices_paths:
-       - "qodo-monorepo"
+       - "monorepo-name"
      monorepo_subprojects:
-       qodo-github:
+       service-a:
          best_practices_paths:
-           - "qodo-monorepo/qodo-github"
-       qodo-gitlab:
+           - "monorepo-name/service-a"
+       service-b:
          best_practices_paths:
-           - "qodo-monorepo/qodo-gitlab"
+           - "monorepo-name/service-b"
    ```
 
 4\. Set the following configuration in your global configuration file:
@@ -437,9 +472,26 @@ dual_publishing_score_threshold = x
 
 Where x represents the minimum score threshold (>=) for suggestions to be presented as committable PR comments in addition to the table. Default is -1 (disabled).
 
+### Controlling suggestions depth
+
+> `💎 feature`
+
+You can control the depth and comprehensiveness of the code suggestions by using the `pr_code_suggestions.suggestions_depth` parameter.
+
+Available options:
+
+- `selective` - Shows only suggestions above a score threshold of 6
+- `regular` - Default mode with balanced suggestion coverage  
+- `exhaustive` - Provides maximum suggestion comprehensiveness
+
+(Alternatively, use numeric values: 1, 2, or 3 respectively)
+
+We recommend starting with `regular` mode, then exploring `exhaustive` mode, which can provide more comprehensive suggestions and enhanced bug detection.
+
+
 ### Self-review
 
-> `💎 feature` Platforms supported: GitHub, GitLab
+> `💎 feature. Platforms supported: GitHub, GitLab`
 
 If you set in a configuration file:
 
@@ -491,11 +543,11 @@ Qodo Merge uses a dynamic strategy to generate code suggestions based on the siz
 #### 1. Chunking large PRs
 
 - Qodo Merge divides large PRs into 'chunks'.
-- Each chunk contains up to `pr_code_suggestions.max_context_tokens` tokens (default: 24,000).
+- Each chunk contains up to `config.max_model_tokens` tokens (default: 32,000).
 
 #### 2. Generating suggestions
 
-- For each chunk, Qodo Merge generates up to `pr_code_suggestions.num_code_suggestions_per_chunk` suggestions (default: 4).
+- For each chunk, Qodo Merge generates up to `pr_code_suggestions.num_code_suggestions_per_chunk` suggestions (default: 3).
 
 This approach has two main benefits:
 
@@ -520,6 +572,10 @@ Note: Chunking is primarily relevant for large PRs. For most PRs (up to 600 line
       <tr>
         <td><b>enable_chat_in_code_suggestions</b></td>
         <td>If set to true, QM bot will interact with comments made on code changes it has proposed. Default is true.</td>
+      </tr>
+      <tr>
+        <td><b>suggestions_depth 💎</b></td>
+        <td> Controls the depth of the suggestions. Can be set to 'selective', 'regular', or 'exhaustive'. Default is 'regular'.</td>
       </tr>
       <tr>
         <td><b>dual_publishing_score_threshold</b></td>
@@ -547,7 +603,7 @@ Note: Chunking is primarily relevant for large PRs. For most PRs (up to 600 line
       </tr>
       <tr>
         <td><b>enable_help_text</b></td>
-        <td>If set to true, the tool will display a help text in the comment. Default is true.</td>
+        <td>If set to true, the tool will display a help text in the comment. Default is false.</td>
       </tr>
       <tr>
         <td><b>enable_chat_text</b></td>
@@ -576,6 +632,10 @@ Note: Chunking is primarily relevant for large PRs. For most PRs (up to 600 line
       <tr>
         <td><b>num_code_suggestions_per_chunk</b></td>
         <td>Number of code suggestions provided by the 'improve' tool, per chunk. Default is 3.</td>
+      </tr>
+      <tr>
+        <td><b>num_best_practice_suggestions 💎</b></td>
+        <td>Number of code suggestions provided by the 'improve' tool for best practices. Default is 1.</td>
       </tr>
       <tr>
         <td><b>max_number_of_calls</b></td>

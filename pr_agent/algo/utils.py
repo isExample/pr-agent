@@ -70,7 +70,8 @@ class ReasoningEffort(str, Enum):
 
 
 class PRDescriptionHeader(str, Enum):
-    CHANGES_WALKTHROUGH = "### **Changes walkthrough** 📝"
+    DIAGRAM_WALKTHROUGH = "Diagram Walkthrough"
+    FILE_WALKTHROUGH = "File Walkthrough"
 
 
 def get_setting(key: str) -> Any:
@@ -147,6 +148,7 @@ def convert_to_markdown_v2(output_data: dict,
         "Insights from user's answers": "📝",
         "Code feedback": "🤖",
         "Estimated effort to review [1-5]": "⏱️",
+        "Contribution time cost estimate": "⏳",
         "Ticket compliance check": "🎫",
     }
     markdown_text = ""
@@ -206,6 +208,14 @@ def convert_to_markdown_v2(output_data: dict,
                     markdown_text += f"### {emoji} PR contains tests\n\n"
         elif 'ticket compliance check' in key_nice.lower():
             markdown_text = ticket_markdown_logic(emoji, markdown_text, value, gfm_supported)
+        elif 'contribution time cost estimate' in key_nice.lower():
+            if gfm_supported:
+                markdown_text += f"<tr><td>{emoji}&nbsp;<strong>Contribution time estimate</strong> (best, average, worst case): "
+                markdown_text += f"{value['best_case'].replace('m', ' minutes')} | {value['average_case'].replace('m', ' minutes')} | {value['worst_case'].replace('m', ' minutes')}"
+                markdown_text += f"</td></tr>\n"
+            else:
+                markdown_text += f"### {emoji} Contribution time estimate (best, average, worst case): "
+                markdown_text += f"{value['best_case'].replace('m', ' minutes')} | {value['average_case'].replace('m', ' minutes')} | {value['worst_case'].replace('m', ' minutes')}\n\n"
         elif 'security concerns' in key_nice.lower():
             if gfm_supported:
                 markdown_text += f"<tr><td>"
@@ -738,7 +748,7 @@ def _fix_key_value(key: str, value: str):
 
 def load_yaml(response_text: str, keys_fix_yaml: List[str] = [], first_key="", last_key="") -> dict:
     response_text_original = copy.deepcopy(response_text)
-    response_text = response_text.strip('\n').removeprefix('```yaml').rstrip().removesuffix('```')
+    response_text = response_text.strip('\n').removeprefix('yaml').removeprefix('```yaml').rstrip().removesuffix('```')
     try:
         data = yaml.safe_load(response_text)
     except Exception as e:
@@ -762,7 +772,8 @@ def try_fix_yaml(response_text: str,
                  response_text_original="") -> dict:
     response_text_lines = response_text.split('\n')
 
-    keys_yaml = ['relevant line:', 'suggestion content:', 'relevant file:', 'existing code:', 'improved code:', 'label:']
+    keys_yaml = ['relevant line:', 'suggestion content:', 'relevant file:', 'existing code:',
+                 'improved code:', 'label:', 'why:', 'suggestion_summary:']
     keys_yaml = keys_yaml + keys_fix_yaml
 
     # first fallback - try to convert 'relevant line: ...' to relevant line: |-\n        ...'
@@ -837,12 +848,13 @@ def try_fix_yaml(response_text: str,
         if index_end == -1:
             index_end = len(response_text)
         response_text_copy = response_text[index_start:index_end].strip().strip('```yaml').strip('`').strip()
-        try:
-            data = yaml.safe_load(response_text_copy)
-            get_logger().info(f"Successfully parsed AI prediction after extracting yaml snippet")
-            return data
-        except:
-            pass
+        if response_text_copy:
+            try:
+                data = yaml.safe_load(response_text_copy)
+                get_logger().info(f"Successfully parsed AI prediction after extracting yaml snippet")
+                return data
+            except:
+                pass
 
     # fifth fallback - try to remove leading '+' (sometimes added by AI for 'existing code' and 'improved code')
     response_text_lines_copy = response_text_lines.copy()
@@ -871,20 +883,45 @@ def try_fix_yaml(response_text: str,
     response_text_copy = copy.deepcopy(response_text)
     response_text_copy_lines = response_text_copy.split('\n')
     start_line = -1
+    improve_sections = ['existing_code:', 'improved_code:', 'response:', 'why:']
+    describe_sections = ['description:', 'title:', 'changes_diagram:', 'pr_files:', 'pr_ticket:']
     for i, line in enumerate(response_text_copy_lines):
-        if 'existing_code:' in line or 'improved_code:' in line:
+        line_stripped = line.rstrip()
+        if any(key in line_stripped for key in (improve_sections+describe_sections)):
             start_line = i
-        elif line.endswith(': |') or line.endswith(': |-') or line.endswith(': |2') or line.endswith(':'):
+        elif line_stripped.endswith(': |') or line_stripped.endswith(': |-') or line_stripped.endswith(': |2') or any(line_stripped.endswith(key) for key in keys_yaml):
             start_line = -1
         elif start_line != -1:
             response_text_copy_lines[i] = '    ' + line
     response_text_copy = '\n'.join(response_text_copy_lines)
+    response_text_copy = response_text_copy.replace(' |\n', ' |2\n')
     try:
         data = yaml.safe_load(response_text_copy)
         get_logger().info(f"Successfully parsed AI prediction after adding indent for sections of code blocks")
         return data
     except:
         pass
+
+    # eighth fallback - try to remove pipe chars at the root-level dicts
+    response_text_copy = copy.deepcopy(response_text)
+    response_text_copy = response_text_copy.lstrip('|\n')
+    try:
+        data = yaml.safe_load(response_text_copy)
+        get_logger().info(f"Successfully parsed AI prediction after removing pipe chars")
+        return data
+    except:
+        pass
+
+    # ninth fallback - try to decode the response text with different encodings. GPT-5 can return text that is not utf-8 encoded.
+    encodings_to_try = ['latin-1', 'utf-16']
+    for encoding in encodings_to_try:
+        try:
+            data = yaml.safe_load(response_text.encode(encoding).decode("utf-8"))
+            if data:
+                get_logger().info(f"Successfully parsed AI prediction after decoding with {encoding} encoding")
+                return data
+        except:
+            pass
 
     # # sixth fallback - try to remove last lines
     # for i in range(1, len(response_text_lines)):
@@ -1284,14 +1321,35 @@ def process_description(description_full: str) -> Tuple[str, List]:
     if not description_full:
         return "", []
 
-    description_split = description_full.split(PRDescriptionHeader.CHANGES_WALKTHROUGH.value)
-    base_description_str = description_split[0]
-    changes_walkthrough_str = ""
-    files = []
-    if len(description_split) > 1:
-        changes_walkthrough_str = description_split[1]
+    # description_split = description_full.split(PRDescriptionHeader.FILE_WALKTHROUGH.value)
+    if PRDescriptionHeader.FILE_WALKTHROUGH.value in description_full:
+        try:
+            # FILE_WALKTHROUGH are presented in a collapsible section in the description
+            regex_pattern = r'<details.*?>\s*<summary>\s*<h3>\s*' + re.escape(PRDescriptionHeader.FILE_WALKTHROUGH.value) + r'\s*</h3>\s*</summary>'
+            description_split = re.split(regex_pattern, description_full, maxsplit=1, flags=re.DOTALL)
+
+            # If the regex pattern is not found, fallback to the previous method
+            if len(description_split) == 1:
+                get_logger().debug("Could not find regex pattern for file walkthrough, falling back to simple split")
+                description_split = description_full.split(PRDescriptionHeader.FILE_WALKTHROUGH.value, 1)
+        except Exception as e:
+            get_logger().warning(f"Failed to split description using regex, falling back to simple split: {e}")
+            description_split = description_full.split(PRDescriptionHeader.FILE_WALKTHROUGH.value, 1)
+
+        if len(description_split) < 2:
+            get_logger().error("Failed to split description into base and changes walkthrough", artifact={'description': description_full})
+            return description_full.strip(), []
+
+        base_description_str = description_split[0].strip()
+        changes_walkthrough_str = ""
+        files = []
+        if len(description_split) > 1:
+            changes_walkthrough_str = description_split[1]
+        else:
+            get_logger().debug("No changes walkthrough found")
     else:
-        get_logger().debug("No changes walkthrough found")
+        base_description_str = description_full.strip()
+        return base_description_str, []
 
     try:
         if changes_walkthrough_str:
@@ -1314,18 +1372,20 @@ def process_description(description_full: str) -> Tuple[str, List]:
                 try:
                     if isinstance(file_data, tuple):
                         file_data = file_data[0]
-                    pattern = r'<details>\s*<summary><strong>(.*?)</strong>\s*<dd><code>(.*?)</code>.*?</summary>\s*<hr>\s*(.*?)\s*<li>(.*?)</details>'
+                    pattern = r'<details>\s*<summary><strong>(.*?)</strong>\s*<dd><code>(.*?)</code>.*?</summary>\s*<hr>\s*(.*?)\s*(?:<li>|•)(.*?)</details>'
                     res = re.search(pattern, file_data, re.DOTALL)
                     if not res or res.lastindex != 4:
                         pattern_back = r'<details>\s*<summary><strong>(.*?)</strong><dd><code>(.*?)</code>.*?</summary>\s*<hr>\s*(.*?)\n\n\s*(.*?)</details>'
                         res = re.search(pattern_back, file_data, re.DOTALL)
                     if not res or res.lastindex != 4:
-                        pattern_back = r'<details>\s*<summary><strong>(.*?)</strong>\s*<dd><code>(.*?)</code>.*?</summary>\s*<hr>\s*(.*?)\s*-\s*(.*?)\s*</details>' # looking for hyphen ('- ')
+                        pattern_back = r'<details>\s*<summary><strong>(.*?)</strong>\s*<dd><code>(.*?)</code>.*?</summary>\s*<hr>\s*(.*?)\s*-\s*(.*?)\s*</details>' # looking for hypen ('- ')
                         res = re.search(pattern_back, file_data, re.DOTALL)
                     if res and res.lastindex == 4:
                         short_filename = res.group(1).strip()
                         short_summary = res.group(2).strip()
                         long_filename = res.group(3).strip()
+                        if long_filename.endswith('<ul>'):
+                            long_filename = long_filename[:-4].strip()
                         long_summary =  res.group(4).strip()
                         long_summary = long_summary.replace('<br> *', '\n*').replace('<br>','').replace('\n','<br>')
                         long_summary = h.handle(long_summary).strip()
@@ -1344,7 +1404,7 @@ def process_description(description_full: str) -> Tuple[str, List]:
                         if '<code>...</code>' in file_data:
                             pass # PR with many files. some did not get analyzed
                         else:
-                            get_logger().error(f"Failed to parse description", artifact={'description': file_data})
+                            get_logger().warning(f"Failed to parse description", artifact={'description': file_data})
                 except Exception as e:
                     get_logger().exception(f"Failed to process description: {e}", artifact={'description': file_data})
 

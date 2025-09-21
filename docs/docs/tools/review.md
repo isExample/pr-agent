@@ -1,6 +1,6 @@
 ## Overview
 
-The `review` tool scans the PR code changes, and generates a list of feedbacks about the PR, aiming to aid the reviewing process.
+The `review` tool scans the PR code changes, and generates feedback about the PR, aiming to aid the reviewing process.
 <br>
 The tool can be triggered automatically every time a new PR is [opened](../usage-guide/automations_and_usage.md#github-app-automatic-tools-when-a-new-pr-is-opened), or can be invoked manually by commenting on any PR:
 
@@ -8,7 +8,7 @@ The tool can be triggered automatically every time a new PR is [opened](../usage
 /review
 ```
 
-Note that the main purpose of the `review` tool is to provide the **PR reviewer** with useful feedbacks and insights. The PR author, in contrast, may prefer to save time and focus on the output of the [improve](./improve.md) tool, which provides actionable code suggestions.
+Note that the main purpose of the `review` tool is to provide the **PR reviewer** with useful feedback and insights. The PR author, in contrast, may prefer to save time and focus on the output of the [improve](./improve.md) tool, which provides actionable code suggestions.
 
 (Read more about the different personas in the PR process and how Qodo Merge aims to assist them in our [blog](https://www.codium.ai/blog/understanding-the-challenges-and-pain-points-of-the-pull-request-cycle/))
 
@@ -68,7 +68,7 @@ extra_instructions = "..."
       </tr>
       <tr>
         <td><b>enable_help_text</b></td>
-        <td>If set to true, the tool will display a help text in the comment. Default is true.</td>
+        <td>If set to true, the tool will display a help text in the comment. Default is false.</td>
       </tr>
       <tr>
         <td><b>num_max_findings</b></td>
@@ -90,6 +90,10 @@ extra_instructions = "..."
       <tr>
         <td><b>require_estimate_effort_to_review</b></td>
         <td>If set to true, the tool will add a section that estimates the effort needed to review the PR. Default is true.</td>
+      </tr>
+      <tr>
+        <td><b>require_estimate_contribution_time_cost</b></td>
+        <td>If set to true, the tool will add a section that estimates the time required for a senior developer to create and submit such changes. Default is false.</td>
       </tr>
       <tr>
         <td><b>require_can_be_split_review</b></td>

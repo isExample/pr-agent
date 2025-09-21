@@ -9,9 +9,10 @@ This integration enriches the review process by automatically surfacing relevant
 
 **Ticket systems supported**:
 
-- [GitHub](https://qodo-merge-docs.qodo.ai/core-abilities/fetching_ticket_context/#github-issues-integration)
+- [GitHub/Gitlab Issues](https://qodo-merge-docs.qodo.ai/core-abilities/fetching_ticket_context/#githubgitlab-issues-integration)
 - [Jira (💎)](https://qodo-merge-docs.qodo.ai/core-abilities/fetching_ticket_context/#jira-integration)
 - [Linear (💎)](https://qodo-merge-docs.qodo.ai/core-abilities/fetching_ticket_context/#linear-integration)
+- [Monday (💎)](https://qodo-merge-docs.qodo.ai/core-abilities/fetching_ticket_context/#monday-integration)
 
 **Ticket data fetched:**
 
@@ -74,14 +75,17 @@ A `PR Code Verified` label indicates the PR code meets ticket requirements, but 
     
     the `review` tool will also validate that the PR code doesn't contain any additional content that is not related to the ticket. If it does, the PR will be labeled at best as `PR Code Verified`, and the `review` tool will provide a comment with the additional unrelated content found in the PR code.
 
-## GitHub Issues Integration
+## GitHub/Gitlab Issues Integration
 
-Qodo Merge will automatically recognize GitHub issues mentioned in the PR description and fetch the issue content.
-Examples of valid GitHub issue references:
+Qodo Merge will automatically recognize GitHub/Gitlab issues mentioned in the PR description and fetch the issue content.
+Examples of valid GitHub/Gitlab issue references:
 
-- `https://github.com/<ORG_NAME>/<REPO_NAME>/issues/<ISSUE_NUMBER>`
+- `https://github.com/<ORG_NAME>/<REPO_NAME>/issues/<ISSUE_NUMBER>` or `https://gitlab.com/<ORG_NAME>/<REPO_NAME>/-/issues/<ISSUE_NUMBER>`
 - `#<ISSUE_NUMBER>`
 - `<ORG_NAME>/<REPO_NAME>#<ISSUE_NUMBER>`
+
+Branch names can also be used to link issues, for example:
+- `123-fix-bug` (where `123` is the issue number)
 
 Since Qodo Merge is integrated with GitHub, it doesn't require any additional configuration to fetch GitHub issues.
 
@@ -104,7 +108,7 @@ Installation steps:
 2. Click on the Connect **Jira Cloud** button to connect the Jira Cloud app
 
 3. Click the `accept` button.<br>
-![Jira Cloud App Installation](https://www.qodo.ai/images/pr_agent/jira_app_installation1.png){width=384}
+![Jira Cloud App Installation](https://www.qodo.ai/images/pr_agent/jira_app_installation2.png){width=384}
 
 4. After installing the app, you will be redirected to the Qodo Merge registration page. and you will see a success message.<br>
 ![Jira Cloud App success message](https://www.qodo.ai/images/pr_agent/jira_app_success.png){width=384}
@@ -448,3 +452,49 @@ Name your branch with the ticket ID as a prefix (e.g., `ABC-123-feature-descript
     ```
     
     Replace `[ORG_ID]` with your Linear organization identifier.
+
+## Monday Integration 💎
+
+### Monday App Authentication
+The recommended way to authenticate with Monday is to connect the Monday app through the Qodo Merge portal.
+
+Installation steps:
+
+1. Go to the [Qodo Merge integrations page](https://app.qodo.ai/qodo-merge/integrations)
+2. Navigate to the **Integrations** tab
+3. Click on the **Monday** button to connect the Monday app
+4. Follow the authentication flow to authorize Qodo Merge to access your Monday workspace
+5. Once connected, Qodo Merge will be able to fetch Monday ticket context for your PRs
+
+### Monday Ticket Context
+`Ticket Context and Ticket Compliance are supported for Monday items, but not yet available in the "PR to Ticket" feature.`
+
+When Qodo Merge processes your PRs, it extracts the following information from Monday items:
+
+* **Item ID and Name:** The unique identifier and title of the Monday item
+* **Item URL:** Direct link to the Monday item in your workspace
+* **Ticket Description:** All long text type columns and their values from the item
+* **Status and Labels:** Current status values and color-coded labels for quick context
+* **Sub-items:** Names, IDs, and descriptions of all related sub-items with hierarchical structure
+
+### How Monday Items are Detected
+Qodo Merge automatically detects Monday items from:
+
+* PR Descriptions: Full Monday URLs like https://workspace.monday.com/boards/123/pulses/456
+* Branch Names: Item IDs in branch names (6-12 digit patterns) - requires `monday_base_url` configuration
+
+### Configuration Setup (Optional)
+If you want to extract Monday item references from branch names or use standalone item IDs, you need to set the `monday_base_url` in your configuration file:
+
+To support Monday ticket referencing from branch names, item IDs (6-12 digits) should be part of the branch names and you need to configure `monday_base_url`:
+```toml
+[monday]
+monday_base_url = "https://your_monday_workspace.monday.com"
+```
+
+Examples of supported branch name patterns:
+
+* `feature/123456789` → extracts item ID 123456789
+* `bugfix/456789012-login-fix` → extracts item ID 456789012
+* `123456789` → extracts item ID 123456789
+* `456789012-login-fix` → extracts item ID 456789012
